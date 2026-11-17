@@ -1,0 +1,60 @@
+using backend.Api.Modules.Identity.Domain.Entities;
+using backend.Common.Interfaces;
+using Microsoft.Extensions.Configuration;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
+
+namespace backend.Modules.Identity.Services
+{
+    public class JwtTokenGenerator : IJwtTokenGenerator
+    {
+        private readonly IConfiguration _configuration;
+
+        public JwtTokenGenerator(IConfiguration configuration)
+        {
+            _configuration = configuration;
+        }
+
+        public string GenerateRefreshToken()
+        {
+            var randomNumber = new byte[64];
+            using var rng = RandomNumberGenerator.Create();
+            rng.GetBytes(randomNumber);
+            return Convert.ToBase64String(randomNumber);
+        }
+
+        public string GenerateToken(Guid UserId, string Email, string Role, Guid? LocationId)
+        {
+            var claims = new List<Claim>
+            {
+                new Claim(ClaimTypes.NameIdentifier, UserId.ToString()),
+                new Claim(ClaimTypes.Email, Email),
+                new Claim(ClaimTypes.Role, Role),
+                new Claim("role", Role),
+            };
+
+            if (LocationId.HasValue && LocationId.Value != Guid.Empty)
+            {
+                claims.Add(new Claim("location_id", LocationId.Value.ToString()));
+            }
+
+            var secret = _configuration["JwtSettings:Secret"]
+                        ?? throw new InvalidOperationException("El secreto JWT (JwtSettings:Secret) no está configurado en appsettings.json o en las variables de entorno.");
+
+            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
+            var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+
+            var token = new JwtSecurityToken(
+                issuer: _configuration["JwtSettings:Issuer"],
+                audience: _configuration["JwtSettings:Audience"],
+                claims: claims,
+                expires: DateTime.UtcNow.AddMinutes(30),
+                signingCredentials: creds);
+
+            return new JwtSecurityTokenHandler().WriteToken(token);
+        }
+    }
+}

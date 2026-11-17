@@ -1,0 +1,9 @@
+<Solution>
+  <Project Path="backend/src/backend.Api/backend.Api.csproj" />
+  <Project Path="backend/src/Common/backend.Common/backend.Common.csproj" />
+  <Project Path="backend/src/Modules/FieldService/backend.Modules.FieldService.csproj" />
+  <Project Path="backend/src/Modules/Identity/backend.Modules.Identity.csproj" />
+  <Project Path="backend/src/Modules/Inventory/backend.Modules.Inventory.csproj" />
+  <Project Path="backend/src/Modules/Logistics/backend.Modules.Logistics.csproj" />
+  <Project Path="backend/src/Modules/Notifications/backend.Modules.Notifications.csproj" />
+</Solution>

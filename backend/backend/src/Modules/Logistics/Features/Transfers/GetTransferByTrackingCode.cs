@@ -1,0 +1,93 @@
+using backend.Common.Exceptions;
+using backend.Common.Interfaces;
+using backend.Modules.Logistics.Database;
+using backend.Modules.Logistics.Domain.Constants;
+using backend.Modules.Logistics.Features.EndpointGroup;
+using MediatR;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.EntityFrameworkCore;
+
+namespace backend.Modules.Logistics.Features.Transfers
+{
+    public class GetTransferByTrackingCode
+    {
+        public record TransferItemDetail(Guid SparePartId, int Quantity);
+        public record TransferDetail(
+            Guid Id,
+            string TrackingCode,
+            Guid OriginLocationId,
+            Guid DestinationLocationId,
+            string Status,
+            string? ExceptionNotes,
+            DateTime CreatedAtUtc,
+            string? CreatedBy,
+            DateTime? LastModifiedAtUtc,
+            List<TransferItemDetail> Items
+        );
+        public record Query(string TrackingCode) : IRequest<TransferDetail>;
+        public class Handler : IRequestHandler<Query, TransferDetail>
+        {
+            private readonly LogisticDbContext _dbContext;
+            private readonly ICurrentService _currentService;
+            public Handler(LogisticDbContext dbContext, ICurrentService currentService)
+            {
+                _dbContext = dbContext;
+                _currentService = currentService;
+            }
+            public async Task<TransferDetail> Handle(Query request, CancellationToken cancellationToken)
+            {
+                var cleanCode = request.TrackingCode.Trim().ToUpperInvariant();
+
+                var transfer = await _dbContext.Transfers
+                    .AsNoTracking()
+                    .Where(t => t.TrackingCode == cleanCode)
+                    .Select(t => new TransferDetail(
+                        t.Id,
+                        t.TrackingCode,
+                        t.OriginLocationId,
+                        t.DestinationLocationId,
+                        t.Status.ToString(),
+                        t.ExceptionNotes,
+                        t.CreatedAtUtc,
+                        t.CreatedBy,
+                        t.LastModifiedAtUtc,
+                        t.Items.Select(i => new TransferItemDetail(
+                            i.SparePartId,
+                            i.Quantity
+                        )).ToList()
+                    ))
+                    .FirstOrDefaultAsync(cancellationToken);
+
+                if (transfer == null)
+                    throw new NotFoundException($"No se encontró ninguna guía de traslado con el código '{cleanCode}'.");
+
+                // 🔐 TENANT SCOPING: Blindaje para evitar que una provincia curiosee envíos que no le competen
+                if (!_currentService.IsAdmin &&
+                    transfer.OriginLocationId != _currentService.LocationId &&
+                    transfer.DestinationLocationId != _currentService.LocationId)
+                {
+                    throw new UnauthorizedAccessException("No tienes autorización para consultar el estado de este traslado interprovincial.");
+                }
+
+                return transfer;
+            }
+        }
+        public class Endpoint : IEndpoint
+        {
+            public void MapEndpoint(IEndpointRouteBuilder app)
+            {
+                app.MapLogisticGroup().MapGet("/trasnfer/track/{trackingCode}", async (string trackingCode, ISender sender) =>
+                {
+                    var result = await sender.Send(new Query(trackingCode));
+                    return Results.Ok(result);
+                })
+                .RequireAuthorization(new AuthorizeAttribute { Roles = RequiredRoles.OperatorManager })
+                .WithName("GetTransferByTrackingCode")
+                .WithTags("Logistics - Transfers");
+            }
+        }
+    }
+}

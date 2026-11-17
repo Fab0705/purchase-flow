@@ -1,0 +1,12 @@
+@'
+**/.vs/
+**/bin/
+**/obj/
+**/node_modules/
+**/dist/
+**/.env
+**/.env.*
+!**/.env.example
+**/*.user
+**/*.suo
+'@ | Set-Content -Encoding utf8 .gitignore
